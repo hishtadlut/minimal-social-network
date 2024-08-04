@@ -261,11 +261,6 @@ async def get_chats(current_user: User = Depends(get_current_user), db: Session 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred while fetching chats: {str(e)}")
 
-@app.get("/messages/unread-count", response_model=dict)
-async def get_unread_message_count(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    unread_count = db.query(Message).filter(Message.recipient_id == current_user.id, Message.is_read == False).count()
-    return {"count": unread_count}
-
 @app.get("/chats", response_model=List[dict])
 async def get_chats(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     chats = []
@@ -361,10 +356,12 @@ async def search_users(query: str, db: Session = Depends(get_db), current_user: 
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
-@app.get("/users/me/posts", response_model=List[PostOut])
-async def read_user_posts(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    posts = db.query(Post).filter(Post.user_id == current_user.id).all()
-    return [PostOut.from_orm(post) for post in posts]
+@app.get("/users/{user_id}", response_model=UserOut)
+async def get_user(user_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
 
 # Create tables
 with connect_with_retry(engine) as connection:
