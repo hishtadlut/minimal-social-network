@@ -102,6 +102,7 @@ class Message(Base):
     sender_id = Column(Integer, ForeignKey("users.id"))
     recipient_id = Column(Integer, ForeignKey("users.id"))
     timestamp = Column(DateTime, default=datetime.utcnow)
+    is_read = Column(Boolean, default=False)
 
     sender = relationship("User", back_populates="sent_messages", foreign_keys=[sender_id])
     recipient = relationship("User", back_populates="received_messages", foreign_keys=[recipient_id])
@@ -218,6 +219,82 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
                 raise HTTPException(status_code=400, detail="Username already taken")
         raise HTTPException(status_code=400, detail="Registration failed")
 
+@app.get("/messages/unread-count", response_model=dict)
+async def get_unread_message_count(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        unread_count = db.query(Message).filter(Message.recipient_id == current_user.id, Message.is_read == False).count()
+        return {"count": unread_count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred while fetching unread message count: {str(e)}")
+
+@app.get("/chats", response_model=List[dict])
+async def get_chats(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        chats = []
+        # Get all users the current user has exchanged messages with
+        chat_partners = db.query(User).join(Message, 
+            ((Message.sender_id == User.id) & (Message.recipient_id == current_user.id)) | 
+            ((Message.recipient_id == User.id) & (Message.sender_id == current_user.id))
+        ).filter(User.id != current_user.id).distinct().all()
+
+        for partner in chat_partners:
+            last_message = db.query(Message).filter(
+                ((Message.sender_id == current_user.id) & (Message.recipient_id == partner.id)) |
+                ((Message.sender_id == partner.id) & (Message.recipient_id == current_user.id))
+            ).order_by(Message.timestamp.desc()).first()
+
+            unread_count = db.query(Message).filter(
+                Message.sender_id == partner.id,
+                Message.recipient_id == current_user.id,
+                Message.is_read == False
+            ).count()
+
+            chats.append({
+                "id": partner.id,
+                "username": partner.username,
+                "lastMessage": last_message.content if last_message else "",
+                "unreadCount": unread_count
+            })
+
+        return chats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred while fetching chats: {str(e)}")
+
+@app.get("/messages/unread-count", response_model=dict)
+async def get_unread_message_count(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    unread_count = db.query(Message).filter(Message.recipient_id == current_user.id, Message.is_read == False).count()
+    return {"count": unread_count}
+
+@app.get("/chats", response_model=List[dict])
+async def get_chats(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    chats = []
+    # Get all users the current user has exchanged messages with
+    chat_partners = db.query(User).join(Message, 
+        ((Message.sender_id == User.id) & (Message.recipient_id == current_user.id)) | 
+        ((Message.recipient_id == User.id) & (Message.sender_id == current_user.id))
+    ).filter(User.id != current_user.id).distinct().all()
+
+    for partner in chat_partners:
+        last_message = db.query(Message).filter(
+            ((Message.sender_id == current_user.id) & (Message.recipient_id == partner.id)) |
+            ((Message.sender_id == partner.id) & (Message.recipient_id == current_user.id))
+        ).order_by(Message.timestamp.desc()).first()
+
+        unread_count = db.query(Message).filter(
+            Message.sender_id == partner.id,
+            Message.recipient_id == current_user.id,
+            Message.is_read == False
+        ).count()
+
+        chats.append({
+            "id": partner.id,
+            "username": partner.username,
+            "lastMessage": last_message.content if last_message else "",
+            "unreadCount": unread_count
+        })
+
+    return chats
+
 @app.post("/token")
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == form_data.username).first()
@@ -261,6 +338,13 @@ async def get_messages(recipient_id: int, db: Session = Depends(get_db), current
         ((Message.sender_id == current_user.id) & (Message.recipient_id == recipient_id)) |
         ((Message.sender_id == recipient_id) & (Message.recipient_id == current_user.id))
     ).order_by(Message.timestamp).all()
+    
+    # Mark messages as read
+    for message in messages:
+        if message.recipient_id == current_user.id and not message.is_read:
+            message.is_read = True
+    db.commit()
+    
     return [MessageOut.from_orm(message) for message in messages]
 
 @app.get("/users/search", response_model=List[UserOut])
