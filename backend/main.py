@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, Boolean
 from sqlalchemy.ext.declarative import declarative_base
@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 import time
 from sqlalchemy.exc import OperationalError
+import json
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://admin:secretpassword@database/socialnetwork")
@@ -317,17 +318,6 @@ async def get_posts(db: Session = Depends(get_db), token: str = Depends(oauth2_s
     posts = db.query(Post).options(joinedload(Post.author)).all()
     return [PostOut.from_orm(post) for post in posts]
 
-@app.post("/messages", response_model=MessageOut)
-async def send_message(message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    recipient = db.query(User).filter(User.id == message.recipient_id).first()
-    if not recipient:
-        raise HTTPException(status_code=404, detail="Recipient not found")
-    db_message = Message(content=message.content, sender_id=current_user.id, recipient_id=message.recipient_id)
-    db.add(db_message)
-    db.commit()
-    db.refresh(db_message)
-    return MessageOut.from_orm(db_message)
-
 @app.get("/messages/{recipient_id}", response_model=List[MessageOut])
 async def get_messages(recipient_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     messages = db.query(Message).filter(
@@ -362,6 +352,69 @@ async def get_user(user_id: int, db: Session = Depends(get_db), current_user: Us
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
+
+# WebSocket connections
+active_connections = []
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    active_connections.append(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Process received data if needed
+    except WebSocketDisconnect:
+        active_connections.remove(websocket)
+
+# WebSocket connections
+active_connections = []
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    active_connections.append(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Process received data if needed
+    except WebSocketDisconnect:
+        active_connections.remove(websocket)
+
+# WebSocket connections
+active_connections = []
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    active_connections.append(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Process received data if needed
+    except WebSocketDisconnect:
+        active_connections.remove(websocket)
+
+# Modify your send_message function to broadcast to all connected clients
+@app.post("/messages", response_model=MessageOut)
+async def send_message(message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    recipient = db.query(User).filter(User.id == message.recipient_id).first()
+    if not recipient:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+    db_message = Message(content=message.content, sender_id=current_user.id, recipient_id=message.recipient_id)
+    db.add(db_message)
+    db.commit()
+    db.refresh(db_message)
+    
+    # Broadcast new message to all connected clients
+    for connection in active_connections:
+        await connection.send_text(json.dumps({
+            "type": "new_message",
+            "recipient_id": message.recipient_id,
+            "sender_id": current_user.id
+        }))
+    
+    return MessageOut.from_orm(db_message)
 
 # Create tables
 with connect_with_retry(engine) as connection:
