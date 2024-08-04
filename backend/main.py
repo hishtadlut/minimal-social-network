@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship, Session
+from sqlalchemy.orm import sessionmaker, relationship, Session, joinedload
 from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from datetime import datetime, timedelta, date
@@ -10,7 +10,7 @@ import jwt
 import os
 import bcrypt
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List
+from typing import List, Optional
 import time
 from sqlalchemy.exc import OperationalError
 
@@ -33,6 +33,9 @@ class User(Base):
     date_of_birth = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    sent_messages = relationship("Message", back_populates="sender", foreign_keys="Message.sender_id")
+    received_messages = relationship("Message", back_populates="recipient", foreign_keys="Message.recipient_id")
 
 def connect_with_retry(engine, max_retries=5, retry_interval=5):
     for i in range(max_retries):
@@ -91,6 +94,18 @@ class Post(Base):
 
 User.posts = relationship("Post", order_by=Post.id, back_populates="author")
 
+class Message(Base):
+    __tablename__ = "messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content = Column(String)
+    sender_id = Column(Integer, ForeignKey("users.id"))
+    recipient_id = Column(Integer, ForeignKey("users.id"))
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    sender = relationship("User", back_populates="sent_messages", foreign_keys=[sender_id])
+    recipient = relationship("User", back_populates="received_messages", foreign_keys=[recipient_id])
+
 # Pydantic models
 class UserCreate(BaseModel):
     username: str
@@ -100,7 +115,7 @@ class UserCreate(BaseModel):
     last_name: str
     date_of_birth: date
 
-class UserOut(BaseModel):
+class UserOutBase(BaseModel):
     id: int
     username: str
     email: str
@@ -113,14 +128,37 @@ class UserOut(BaseModel):
     class Config:
         orm_mode = True
 
-class PostCreate(BaseModel):
-    content: str
-
 class PostOut(BaseModel):
     id: int
     content: str
-    author: UserOut
     created_at: datetime
+    author: UserOutBase
+
+    class Config:
+        orm_mode = True
+
+class UserOut(UserOutBase):
+    posts: List[PostOut] = []
+
+    class Config:
+        orm_mode = True
+
+class PostCreate(BaseModel):
+    content: str
+
+class MessageCreate(BaseModel):
+    content: str
+    recipient_id: int
+
+class MessageOut(BaseModel):
+    id: int
+    content: str
+    sender: UserOut
+    recipient: UserOut
+    timestamp: datetime
+
+    class Config:
+        orm_mode = True
 
 # Helper functions
 def get_db():
@@ -196,20 +234,43 @@ async def create_post(post: PostCreate, db: Session = Depends(get_db), current_u
         db.add(db_post)
         db.commit()
         db.refresh(db_post)
-        return PostOut(
-            id=db_post.id,
-            content=db_post.content,
-            author=UserOut.from_orm(current_user),
-            created_at=db_post.created_at
-        )
+        return PostOut.from_orm(db_post)
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"An error occurred while creating the post: {str(e)}")
 
-@app.get("/posts", response_model=list[PostOut])
+@app.get("/posts", response_model=List[PostOut])
 async def get_posts(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)):
-    posts = db.query(Post).all()
-    return [PostOut(id=post.id, content=post.content, author=UserOut(**post.author.__dict__), created_at=post.created_at) for post in posts]
+    posts = db.query(Post).options(joinedload(Post.author)).all()
+    return [PostOut.from_orm(post) for post in posts]
+
+@app.post("/messages", response_model=MessageOut)
+async def send_message(message: MessageCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    recipient = db.query(User).filter(User.id == message.recipient_id).first()
+    if not recipient:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+    db_message = Message(content=message.content, sender_id=current_user.id, recipient_id=message.recipient_id)
+    db.add(db_message)
+    db.commit()
+    db.refresh(db_message)
+    return MessageOut.from_orm(db_message)
+
+@app.get("/messages/{recipient_id}", response_model=List[MessageOut])
+async def get_messages(recipient_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    messages = db.query(Message).filter(
+        ((Message.sender_id == current_user.id) & (Message.recipient_id == recipient_id)) |
+        ((Message.sender_id == recipient_id) & (Message.recipient_id == current_user.id))
+    ).order_by(Message.timestamp).all()
+    return [MessageOut.from_orm(message) for message in messages]
+
+@app.get("/users/search", response_model=List[UserOut])
+async def search_users(query: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    users = db.query(User).filter(
+        (User.username.ilike(f"%{query}%")) |
+        (User.first_name.ilike(f"%{query}%")) |
+        (User.last_name.ilike(f"%{query}%"))
+    ).all()
+    return [UserOut.from_orm(user) for user in users]
 
 @app.get("/users/me", response_model=UserOut)
 async def read_users_me(current_user: User = Depends(get_current_user)):
@@ -218,7 +279,7 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
 @app.get("/users/me/posts", response_model=List[PostOut])
 async def read_user_posts(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     posts = db.query(Post).filter(Post.user_id == current_user.id).all()
-    return [PostOut(id=post.id, content=post.content, author=UserOut(**current_user.__dict__), created_at=post.created_at) for post in posts]
+    return [PostOut.from_orm(post) for post in posts]
 
 # Create tables
 with connect_with_retry(engine) as connection:
