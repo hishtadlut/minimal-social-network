@@ -10,6 +10,17 @@ ENV NODE_EXTRA_CA_CERTS=/etc/ca-bundle.crt
 ENV REQUESTS_CA_BUNDLE=/etc/ca-bundle.crt
 ENV SSL_CERT_FILE=/etc/ca-bundle.crt
 # --- END NETFREE CERT INTSALL ---
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    libmagic-dev \
+    gcc \
+    libmagic1 \
+    file \
+    libpq-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+    
 # Copy the requirements file into the container
 COPY requirements.txt .
 
