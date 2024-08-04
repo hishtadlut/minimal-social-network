@@ -1,6 +1,7 @@
-from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, File, UploadFile
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, Boolean, func, Date
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship, Session, joinedload, backref
@@ -14,6 +15,9 @@ from typing import List, Optional
 import time
 import json
 import uvicorn
+from pathlib import Path
+import shutil
+import magic
 
 # Database setup
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://admin:secretpassword@database/socialnetwork")
@@ -46,6 +50,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# File upload configuration
+UPLOAD_DIR = Path("uploads")
+UPLOAD_DIR.mkdir(exist_ok=True)
+
 def connect_with_retry(engine, max_retries=5, retry_interval=5):
     for i in range(max_retries):
         try:
@@ -69,6 +77,7 @@ class User(Base):
     date_of_birth = Column(Date)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    avatar = Column(String, nullable=True)
 
     posts = relationship("Post", back_populates="author")
     likes = relationship("Like", back_populates="user")
@@ -245,7 +254,14 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 @app.post("/users", response_model=UserOut)
 async def create_user(user: UserCreate, db: Session = Depends(get_db)):
     hashed_password = hash_password(user.password)
-    db_user = User(username=user.username, email=user.email, hashed_password=hashed_password)
+    db_user = User(
+        username=user.username,
+        email=user.email,
+        hashed_password=hashed_password,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        date_of_birth=user.date_of_birth
+    )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
@@ -304,6 +320,39 @@ async def like_post(post_id: int, db: Session = Depends(get_db), current_user: U
 @app.get("/users/me", response_model=UserOut)
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+def validate_image(file: UploadFile) -> bool:
+    allowed_types = ["image/jpeg", "image/png", "image/gif"]
+    file_mime_type = magic.from_buffer(file.file.read(1024), mime=True)
+    file.file.seek(0)  # Reset file pointer
+    return file_mime_type in allowed_types
+
+@app.post("/users/me/avatar")
+async def upload_avatar(file: UploadFile = File(...), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not validate_image(file):
+        raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG, PNG, and GIF images are allowed.")
+
+    file_extension = file.filename.split(".")[-1]
+    file_name = f"avatar_{current_user.id}.{file_extension}"
+    file_path = UPLOAD_DIR / file_name
+    
+    with file_path.open("wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    
+    current_user.avatar = f"/uploads/{file_name}"
+    db.commit()
+    
+    return {"filename": file_name}
+
+@app.delete("/users/me/avatar")
+async def delete_avatar(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.avatar:
+        file_path = UPLOAD_DIR / current_user.avatar.split("/")[-1]
+        if file_path.exists():
+            file_path.unlink()
+        current_user.avatar = None
+        db.commit()
+    return {"message": "Avatar deleted successfully"}
 
 @app.get("/messages/unread-count", response_model=dict)
 async def get_unread_message_count(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -531,6 +580,9 @@ async def send_message(message: MessageCreate, db: Session = Depends(get_db), cu
 # Create tables
 with connect_with_retry(engine) as connection:
     Base.metadata.create_all(bind=connection)
+
+# Serve static files
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 @app.get("/")
 async def root():
