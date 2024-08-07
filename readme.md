@@ -1,7 +1,32 @@
 # Minimal Social Network Project
 
 ## Project Description
-This project is a minimal social network application similar to Facebook, focusing on essential features. It provides basic functionality for user management, connections between users, content sharing, and user interactions. The application is built using a FastAPI backend and a React frontend, with Docker for easy deployment and development. Key features include user authentication, post creation and viewing, and a responsive design for both mobile and desktop use.
+This project is a minimal social network application similar to Facebook, focusing on essential features. It was rapidly developed in just one night using Claude Engineer, an AI-powered development tool, demonstrating the power of AI-assisted coding. The application provides basic functionality for user management, connections between users, content sharing, and user interactions. It is built using a FastAPI backend and a React frontend, with Docker for easy deployment and development.
+
+## Development Highlights
+- Developed in just one night with the assistance of Claude Engineer
+- Cost-effective development process (approximately $50 in resources)
+- Rapid implementation of core features
+- AI-assisted code writing, problem-solving, and documentation
+
+## Features Checklist
+
+### Implemented Features
+- [x] User registration and authentication
+- [x] Create and view posts
+- [x] Basic user profiles
+- [x] Real-time chat functionality
+- [x] User search
+- [x] Responsive design for mobile and desktop
+- [x] Docker containerization
+
+### Planned Features
+- [ ] Advanced post engine
+- [ ] User groups
+- [ ] Image upload for posts and profiles
+- [ ] Friend/connection management
+- [ ] Notifications system
+- [ ] Advanced privacy settings
 
 ## Prerequisites
 - Docker
@@ -32,17 +57,23 @@ docker-compose up --build
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000
 
-## Features
-- User registration and authentication
-- Create and view posts
-- Basic user profiles
-- Responsive design for mobile and desktop
-
 ## Basic Usage
 1. Register a new account or log in with existing credentials
 2. Create and share posts
 3. View posts from other users
-4. Update your profile information
+4. Use the search functionality to find other users
+5. Start a chat with other users
+6. Update your profile information
+
+## Future Development
+We are actively working on expanding the features of this Minimal Social Network. Our upcoming plans include:
+- Implementing an advanced post engine for better content management
+- Adding user groups for community building
+- Enhancing the friend/connection functionality
+- Implementing a robust notifications system
+- Improving privacy settings for user control
+
+We welcome contributions and feedback to help make this project even better!
 
 ## Project Structure
 ```
