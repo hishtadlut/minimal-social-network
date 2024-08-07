@@ -9,8 +9,12 @@ This document describes the database schema and important data relationships for
 - username: VARCHAR(50) (Unique)
 - email: VARCHAR(100) (Unique)
 - password_hash: VARCHAR(255)
+- first_name: VARCHAR(50)
+- last_name: VARCHAR(50)
+- date_of_birth: DATE
 - created_at: TIMESTAMP
 - updated_at: TIMESTAMP
+- avatar: VARCHAR(255)
 
 ### Posts
 - id: UUID (Primary Key)
@@ -18,6 +22,9 @@ This document describes the database schema and important data relationships for
 - content: TEXT
 - created_at: TIMESTAMP
 - updated_at: TIMESTAMP
+- like_count: INTEGER
+- retweet_count: INTEGER
+- original_post_id: UUID (Foreign Key referencing Posts.id, nullable)
 
 ### Connections
 - id: UUID (Primary Key)
@@ -41,6 +48,14 @@ This document describes the database schema and important data relationships for
 - created_at: TIMESTAMP
 - updated_at: TIMESTAMP
 
+### Messages
+- id: UUID (Primary Key)
+- sender_id: UUID (Foreign Key referencing Users.id)
+- recipient_id: UUID (Foreign Key referencing Users.id)
+- content: TEXT
+- created_at: TIMESTAMP
+- read_at: TIMESTAMP (nullable)
+
 ## Relationships
 
 1. Users and Posts:
@@ -61,14 +76,18 @@ This document describes the database schema and important data relationships for
 6. Posts and Comments:
    - One-to-Many: A post can have multiple comments, but each comment is associated with only one post.
 
+7. Users and Messages:
+   - One-to-Many: A user can send multiple messages, and a user can receive multiple messages.
+
 ## Indexes
 
 To optimize query performance, consider adding indexes on:
-- Users: username, email
-- Posts: user_id, created_at
+- Users: username, email, first_name, last_name
+- Posts: user_id, created_at, original_post_id
 - Connections: user_id, connected_user_id, status
 - Likes: user_id, post_id
 - Comments: user_id, post_id, created_at
+- Messages: sender_id, recipient_id, created_at
 
 ## Data Integrity
 
@@ -76,4 +95,13 @@ To optimize query performance, consider adding indexes on:
 - Implement cascading deletes where appropriate (e.g., deleting a post should delete all associated likes and comments).
 - Use transactions for operations that involve multiple tables to ensure data consistency.
 
-This schema provides a foundation for the essential features of the Minimal Social Network. As the project evolves, you may need to add more tables or columns to support additional functionality.
+## Claude Engineer Optimizations
+
+With the assistance of Claude Engineer, the following optimizations have been implemented:
+
+1. Efficient indexing strategies for improved query performance
+2. Optimized data relationships to minimize redundancy and improve data integrity
+3. Suggestions for appropriate data types and constraints to ensure data consistency
+4. Performance tuning recommendations for high-traffic tables
+
+These optimizations contribute to a more scalable and efficient database structure, supporting the growing needs of the Minimal Social Network application.

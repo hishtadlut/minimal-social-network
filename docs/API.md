@@ -126,6 +126,78 @@ Response:
 }
 ```
 
+### Chat
+
+#### GET /api/messages/{recipient_id}
+Get chat messages between the authenticated user and the specified recipient.
+
+Response:
+```json
+[
+  {
+    "id": "string",
+    "content": "string",
+    "sender": {
+      "id": "string",
+      "username": "string"
+    },
+    "recipient": {
+      "id": "string",
+      "username": "string"
+    },
+    "timestamp": "string (ISO 8601 format)"
+  }
+]
+```
+
+#### POST /api/messages
+Send a new message to a recipient.
+
+Request body:
+```json
+{
+  "content": "string",
+  "recipient_id": "string"
+}
+```
+
+Response:
+```json
+{
+  "id": "string",
+  "content": "string",
+  "sender": {
+    "id": "string",
+    "username": "string"
+  },
+  "recipient": {
+    "id": "string",
+    "username": "string"
+  },
+  "timestamp": "string (ISO 8601 format)"
+}
+```
+
+### User Search
+
+#### GET /api/users/search
+Search for users based on a query string.
+
+Query parameters:
+- query: string (required)
+
+Response:
+```json
+[
+  {
+    "id": "string",
+    "username": "string",
+    "first_name": "string",
+    "last_name": "string"
+  }
+]
+```
+
 ## Error Handling
 
 All API endpoints return appropriate HTTP status codes and error messages in case of failures. Common error responses include:
@@ -134,13 +206,17 @@ All API endpoints return appropriate HTTP status codes and error messages in cas
 - 401 Unauthorized: Missing or invalid authentication token
 - 403 Forbidden: Insufficient permissions to perform the requested action
 - 404 Not Found: Requested resource not found
+- 409 Conflict: Request could not be completed due to a conflict
+- 422 Unprocessable Entity: Request data failed validation
+- 429 Too Many Requests: Rate limit exceeded
 - 500 Internal Server Error: Unexpected server error
 
 Error response format:
 ```json
 {
   "error": "string",
-  "message": "string"
+  "message": "string",
+  "details": {} // Additional error details, if available
 }
 ```
 
